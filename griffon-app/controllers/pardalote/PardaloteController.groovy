@@ -633,7 +633,7 @@ class PardaloteController {
                                         def content = Parameter.with("message", bodies[ (int)(bodies.size() * Math.random()) ].replaceAll(
                                             /\[\[%myid%\]\]/, model.fullName
                                         ).replaceAll(
-                                            /\[\[%name%\]\]/, message.toFriendsName.split("\n")[i]
+                                            /\[\[%name%\]\]/, birthdayMessage.toFriendsName.split("\n")[i]
                                         ))
                                         FacebookType publishMessageResponse = client.publish(
                                             "${id}/feed",
