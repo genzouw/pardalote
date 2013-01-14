@@ -34,9 +34,13 @@ class PardaloteController {
 
     def statusMessagePublisher2
 
+    def statusMessageLockObject = new Object()
+
     def messagePublisher
 
     def messagePublisher2
+
+    def messageLockObject = new Object()
 
     def birthdayMessagePublisher
 
@@ -273,7 +277,7 @@ class PardaloteController {
                         null,
                         [ "閉じる" ] as String[], "閉じる"
                     )
-                
+
                     facebookApi.accessToken = ""
                     facebookApi.expiresIn = ""
                     facebookApiLoad()
@@ -345,7 +349,7 @@ class PardaloteController {
                         ).toCalendar()
 
                         if( !statusMessageList.empty ) {
-                            def waitForTime = ( endTime.timeInMillis - currentTime.timeInMillis ) / (statusMessageList.size()) 
+                            def waitForTime = ( endTime.timeInMillis - currentTime.timeInMillis ) / (statusMessageList.size())
                             log.info "statusMessagePublisher - waitForTime = ${waitForTime}"
                             Thread.sleep(waitForTime.toInteger())
                         }
@@ -396,7 +400,7 @@ class PardaloteController {
                         """
                         ).findAll{
                             def t = Calendar.instance
-                            t.timeInMillis = it.updatedTime 
+                            t.timeInMillis = it.updatedTime
                             t.add(Calendar.HOUR, it.sendWaitingHours)
 
                             t.timeInMillis <= currentTime.timeInMillis
@@ -480,7 +484,7 @@ class PardaloteController {
                         ).toCalendar()
 
                         if( !messageList.empty ) {
-                            def waitTimeMills = ( endTime.timeInMillis - currentTime.timeInMillis ) / (messageList.size()) 
+                            def waitTimeMills = ( endTime.timeInMillis - currentTime.timeInMillis ) / (messageList.size())
                             log.info "messagePublisher - waitTimeMills = ${waitTimeMills}"
                             Thread.sleep(waitTimeMills.toInteger())
                         }
@@ -534,7 +538,7 @@ class PardaloteController {
                         """
                         ).findAll{
                             def t = Calendar.instance
-                            t.timeInMillis = it.updatedTime 
+                            t.timeInMillis = it.updatedTime
                             t.add(Calendar.HOUR, it.sendWaitingHours)
 
                             t.timeInMillis <= currentTime.timeInMillis
@@ -607,7 +611,7 @@ class PardaloteController {
 
                             def now = Calendar.instance.time
                             def t = Calendar.instance
-                            t.timeInMillis = birthdayMessage.updatedTime 
+                            t.timeInMillis = birthdayMessage.updatedTime
                             if ( t.time.format("yyyyMMdd") < now.format("yyyyMMdd") ) sendFriends.clearAll()
 
 
@@ -640,7 +644,7 @@ class PardaloteController {
                                             FacebookType.class,
                                             content
                                         )
-                                        
+
                                         sendFriends << id
 
                                         this.gsql.executeUpdate(
@@ -741,7 +745,7 @@ class PardaloteController {
                         if (autoClickLikeToMe) {
                             feedList.addAll facebookApi.get("me/feed", ["locale":"ja_JP"]).data.findAll( condition )
                         }
-                            
+
                         log.info "likePublisher - find feed list size is [ ${feedList.size()} ]."
                         log.info "likePublisher - ${feedList}."
                         feedList.findAll { feed ->
@@ -1763,34 +1767,36 @@ class PardaloteController {
     }
 
     def postStatusMessage = { bean, api, sendTimeMills ->
-        def content = Parameter.with("message", bean.body.toString())
+        synchronized(statusMessageLockObject) {
+            def content = Parameter.with("message", bean.body.toString())
 
-        if( (bean.imageFilePath?:"").empty ) {
-            log.info "post to wall : feed"
-            FacebookType publishMessageResponse = api.publish(
-                "me/feed",
-                FacebookType.class,
-                content
-            )
-        } else {
-            def imageFile = new File(bean.imageFilePath)
-            if( imageFile.exists() ) {
-                log.info "post to wall : photos"
+            if( (bean.imageFilePath?:"").empty ) {
+                log.info "post to wall : feed"
                 FacebookType publishMessageResponse = api.publish(
-                    "me/photos",
+                    "me/feed",
                     FacebookType.class,
-                    BinaryAttachment.with(imageFile.name, imageFile.newInputStream()),
                     content
                 )
+            } else {
+                def imageFile = new File(bean.imageFilePath)
+                if( imageFile.exists() ) {
+                    log.info "post to wall : photos"
+                    FacebookType publishMessageResponse = api.publish(
+                        "me/photos",
+                        FacebookType.class,
+                        BinaryAttachment.with(imageFile.name, imageFile.newInputStream()),
+                        content
+                    )
+                }
             }
-        }
 
-        this.gsql.executeUpdate("update status_message set send_time = ${sendTimeMills} where id = ${bean.id}")
+            this.gsql.executeUpdate("update status_message set send_time = ${sendTimeMills} where id = ${bean.id}")
 
-        edt {
-            if( model.doEraseSendStatusMessage )
-                this.gsql.executeUpdate("delete from status_message where send_time is not null")
-            this.reflushStatusMessage()
+            edt {
+                if( model.doEraseSendStatusMessage )
+                    this.gsql.executeUpdate("delete from status_message where send_time is not null")
+                this.reflushStatusMessage()
+            }
         }
 
         log.info "statusMessage posted."
@@ -1798,38 +1804,40 @@ class PardaloteController {
     }
 
     def postMessage = { bean, api, sendTimeMills ->
-        bean.toFriends.split("\n").eachWithIndex{ friendId, i ->
-            def content = Parameter.with("message", bean.body.toString().replaceAll(
-                /\[\[%myid%\]\]/, model.fullName
-            ).replaceAll(
-                /\[\[%name%\]\]/, bean.toFriendsName.split("\n")[i]
-            ))
+        synchronized(messageLockObject) {
+            bean.toFriends.split("\n").eachWithIndex{ friendId, i ->
+                def content = Parameter.with("message", bean.body.toString().replaceAll(
+                    /\[\[%myid%\]\]/, model.fullName
+                ).replaceAll(
+                    /\[\[%name%\]\]/, bean.toFriendsName.split("\n")[i]
+                ))
 
-            if( (bean.imageFilePath?:"").empty ) {
-                FacebookType publishMessageResponse = client.publish(
-                    "${friendId}/feed",
-                    FacebookType.class,
-                    content
-                )
-            } else {
-                def imageFile = new File(bean.imageFilePath)
-                if( imageFile.exists() ) {
+                if( (bean.imageFilePath?:"").empty ) {
                     FacebookType publishMessageResponse = client.publish(
-                        "${friendId}/photos",
+                        "${friendId}/feed",
                         FacebookType.class,
-                        BinaryAttachment.with(imageFile.name, imageFile.newInputStream()),
                         content
                     )
+                } else {
+                    def imageFile = new File(bean.imageFilePath)
+                    if( imageFile.exists() ) {
+                        FacebookType publishMessageResponse = client.publish(
+                            "${friendId}/photos",
+                            FacebookType.class,
+                            BinaryAttachment.with(imageFile.name, imageFile.newInputStream()),
+                            content
+                        )
+                    }
                 }
             }
-        }
 
-        this.gsql.executeUpdate("update message set send_time = ${sendTimeMills} where id = ${bean.id}")
+            this.gsql.executeUpdate("update message set send_time = ${sendTimeMills} where id = ${bean.id}")
 
-        edt {
-            if( model.doEraseSendMessage )
-                this.gsql.executeUpdate("delete from message where send_time is not null")
-            this.reflushMessage()
+            edt {
+                if( model.doEraseSendMessage )
+                    this.gsql.executeUpdate("delete from message where send_time is not null")
+                this.reflushMessage()
+            }
         }
 
         log.info "message posted."
