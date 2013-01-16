@@ -331,14 +331,14 @@ class PardaloteController {
                         """).findAll{ statusMessage ->
                              ( (statusMessage.sendPredeterminedTime - 1) * 3 <= currentTime.format("HH").toInteger() &&
                              (statusMessage.sendPredeterminedTime) * 3 > currentTime.format("HH").toInteger() )
-                        }
+                        } as Queue
 
                         if ( statusMessageList.empty ) {
                             Thread.sleep(10 * 1000)
                             continue
                         }
 
-                        def statusMessage = statusMessageList.head()
+                        def statusMessage = statusMessageList.poll()
 
                         postStatusMessage( statusMessage, client, currentTime.timeInMillis )
 
@@ -349,7 +349,7 @@ class PardaloteController {
                         ).toCalendar()
 
                         if( !statusMessageList.empty ) {
-                            def waitForTime = ( endTime.timeInMillis - currentTime.timeInMillis ) / (statusMessageList.size())
+                            def waitForTime = ( endTime.timeInMillis - currentTime.timeInMillis ) / (statusMessageList.size() + 1)
                             log.info "statusMessagePublisher - waitForTime = ${waitForTime}"
                             Thread.sleep(waitForTime.toInteger())
                         }
@@ -404,14 +404,14 @@ class PardaloteController {
                             t.add(Calendar.HOUR, it.sendWaitingHours)
 
                             t.timeInMillis <= currentTime.timeInMillis
-                        }
+                        } as Queue
 
                         if ( statusMessageList.empty ) {
                             Thread.sleep(10 * 1000)
                             continue
                         }
 
-                        def statusMessage = statusMessageList.head()
+                        def statusMessage = statusMessageList.poll()
 
                         postStatusMessage( statusMessage, client, currentTime.timeInMillis )
 
@@ -466,14 +466,14 @@ class PardaloteController {
                         ) .findAll{ message ->
                             ( (message.sendPredeterminedTime - 1) * 3 <= currentTime.format("HH").toInteger() &&
                             (message.sendPredeterminedTime) * 3 > currentTime.format("HH").toInteger() )
-                        }
+                        } as Queue
 
                         if ( messageList.empty) {
                             Thread.sleep(10 * 1000)
                             continue
                         }
 
-                        def message = messageList.head()
+                        def message = messageList.poll()
 
                         postMessage( message, client, currentTime.timeInMillis )
 
@@ -484,7 +484,7 @@ class PardaloteController {
                         ).toCalendar()
 
                         if( !messageList.empty ) {
-                            def waitTimeMills = ( endTime.timeInMillis - currentTime.timeInMillis ) / (messageList.size())
+                            def waitTimeMills = ( endTime.timeInMillis - currentTime.timeInMillis ) / (messageList.size() + 1)
                             log.info "messagePublisher - waitTimeMills = ${waitTimeMills}"
                             Thread.sleep(waitTimeMills.toInteger())
                         }
@@ -542,14 +542,14 @@ class PardaloteController {
                             t.add(Calendar.HOUR, it.sendWaitingHours)
 
                             t.timeInMillis <= currentTime.timeInMillis
-                        }
+                        } as Queue
 
                         if ( messageList.empty ) {
                             Thread.sleep(10 * 1000)
                             continue
                         }
 
-                        def message = messageList.head()
+                        def message = messageList.poll()
 
                         postMessage( message, client, currentTime.timeInMillis )
 
@@ -637,7 +637,7 @@ class PardaloteController {
                                         def content = Parameter.with("message", bodies[ (int)(bodies.size() * Math.random()) ].replaceAll(
                                             /\[\[%myid%\]\]/, model.fullName
                                         ).replaceAll(
-                                            /\[\[%name%\]\]/, birthdayMessage.toFriendsName.split("\n")[i]
+                                            /\[\[%name%\]\]/, friend.name
                                         ))
                                         FacebookType publishMessageResponse = client.publish(
                                             "${id}/feed",
