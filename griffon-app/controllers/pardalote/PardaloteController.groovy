@@ -1,14 +1,18 @@
 package pardalote
 
-//@Grab("com.restfb:restfb:1.6.9")
+import ca.odell.glazedlists.*
+import ca.odell.glazedlists.gui.*
+import ca.odell.glazedlists.swing.*
 import com.restfb.*
 import com.restfb.types.*
-import javax.swing.*
-import ca.odell.glazedlists.*
-import ca.odell.glazedlists.swing.*
-import ca.odell.glazedlists.gui.*
 import groovy.sql.*
 import groovy.util.logging.*
+import javax.swing.*
+import static javax.swing.JOptionPane.QUESTION_MESSAGE
+import static javax.swing.JOptionPane.YES_NO_OPTION
+import static javax.swing.JOptionPane.YES_OPTION
+import static javax.swing.JOptionPane.showMessageDialog
+import static javax.swing.JOptionPane.showOptionDialog
 
 @Log
 class PardaloteController {
@@ -29,6 +33,8 @@ class PardaloteController {
     FacebookApi facebookApi = null
 
     FacebookClient client = null
+
+    def limitTimeChecker
 
     def statusMessagePublisher
 
@@ -133,7 +139,8 @@ class PardaloteController {
                         birthday_message_body5 text,
                         auto_click_like_hours_of_start_from_now integer,
                         auto_click_like_hours_of_end_from_now integer,
-                        auto_click_like_to_me integer
+                        auto_click_like_to_me integer,
+                        limit_time text
                     )
                 """)
                 this.gsql.execute("""
@@ -154,7 +161,8 @@ class PardaloteController {
                         birthday_message_body5,
                         auto_click_like_hours_of_start_from_now,
                         auto_click_like_hours_of_end_from_now,
-                        auto_click_like_to_me
+                        auto_click_like_to_me,
+                        limit_time
                     )
                     values (
                         '',
@@ -173,7 +181,8 @@ class PardaloteController {
                         '',
                         0,
                         99,
-                        0
+                        0,
+                        ''
                     )
                 """)
 
@@ -197,7 +206,8 @@ class PardaloteController {
                     birthday_message_body5 AS birthdayMessageBody5,
                     auto_click_like_hours_of_start_from_now AS autoClickLikeHoursOfStartFromNow,
                     auto_click_like_hours_of_end_from_now AS autoClickLikeHoursOfEndFromNow,
-                    auto_click_like_to_me AS autoClickLikeToMe
+                    auto_click_like_to_me AS autoClickLikeToMe,
+                    limit_time AS limitTime
                 FROM
                     settings
             """)
@@ -205,7 +215,6 @@ class PardaloteController {
             model.with{
                 appId = settings.appId
                 accessToken = settings.accessToken
-                expiresIn = settings.expiresIn
                 doAutoSendStatusMessage = settings.doAutoSendStatusMessage
                 doAutoSendMessage = settings.doAutoSendMessage
                 doAutoSendBirthdayMessage = settings.doAutoSendBirthdayMessage
@@ -220,6 +229,7 @@ class PardaloteController {
                 autoClickLikeHoursOfStartFromNow = settings.autoClickLikeHoursOfStartFromNow
                 autoClickLikeHoursOfEndFromNow = settings.autoClickLikeHoursOfEndFromNow
                 autoClickLikeToMe = settings.autoClickLikeToMe
+                limitTime = settings.limitTime
             }
 
             if( !model.appId ) {
@@ -263,6 +273,7 @@ class PardaloteController {
 
             facebookApi.accessToken = settings.accessToken
             facebookApi.expiresIn = settings.expiresIn
+            facebookApi.limitTime = settings.limitTime
 
             try {
                 try {
@@ -280,6 +291,7 @@ class PardaloteController {
 
                     facebookApi.accessToken = ""
                     facebookApi.expiresIn = ""
+                    facebookApi.limitTime = ""
                     facebookApiLoad()
                 }
             } catch ( IOException e ) {
@@ -295,6 +307,45 @@ class PardaloteController {
             this.reflushStatusMessage()
             this.reflushBirthdayMessage()
             this.reflushMessage()
+
+
+            this.limitTimeChecker = Thread.start{
+                while ( true ) {
+                    try {
+                        def now = Calendar.instance
+                        if (facebookApi.limitTime) {
+                            if (now.timeInMillis >= facebookApi.limitTime.toLong() - 60*1000) {
+                                facebookApi.reset()
+
+                                edt {
+                                    this.gsql.executeUpdate("""
+                                        UPDATE
+                                            settings
+                                        SET
+                                            access_token = ${facebookApi.accessToken}
+                                            ,expires_in = ${facebookApi.expiresIn}
+                                            ,limit_time = ${facebookApi.limitTime}
+                                    """)
+                    
+                                    model.accessToken = facebookApi.accessToken
+                                    model.fullName = ""
+                                    model.email = ""
+
+                                    showMessageDialog(
+                                        app.windowManager.windows[0],
+                                        "API利用期限となりました。\nメニューより再度認証手続きを実施してください。"
+                                    )
+                                }
+                            }
+                            
+                        }
+                    } catch( Exception e ) {
+                        log.info "", e
+                    } finally {
+                        sleep 10 * 1000
+                    }
+                }
+            }
 
             this.statusMessagePublisher = Thread.start{
                 while(true) {
@@ -354,8 +405,10 @@ class PardaloteController {
                             Thread.sleep(waitForTime.toInteger())
                         }
                     } catch ( IOException e ) {
-                        if( !( e instanceof UnknownHostException || e instanceof NoRouteToHostException ) )
-                            throw e
+                        if( !( e instanceof UnknownHostException || e instanceof NoRouteToHostException ) ) {
+                            log.info "", e
+                            continue
+                        }
 
                         edt{
                             JOptionPane.showMessageDialog( view.mainFrame, "インターネットに接続できません。\n【${model.appName}】を終了します。" )
@@ -417,8 +470,10 @@ class PardaloteController {
 
                         Thread.sleep((10 + (Math.random() * 290).toInteger()) * 1000)
                     } catch ( IOException e ) {
-                        if( !( e instanceof UnknownHostException || e instanceof NoRouteToHostException ) )
-                            throw e
+                        if( !( e instanceof UnknownHostException || e instanceof NoRouteToHostException ) ) {
+                            log.info "", e
+                            continue
+                        }
 
                         edt{
                             JOptionPane.showMessageDialog( view.mainFrame, "インターネットに接続できません。\n【${model.appName}】を終了します。" )
@@ -489,8 +544,10 @@ class PardaloteController {
                             Thread.sleep(waitTimeMills.toInteger())
                         }
                     } catch ( IOException e ) {
-                        if( !( e instanceof UnknownHostException || e instanceof NoRouteToHostException ) )
-                            throw e
+                        if( !( e instanceof UnknownHostException || e instanceof NoRouteToHostException ) ) {
+                            log.info "", e
+                            continue
+                        }
 
                         edt{
                             JOptionPane.showMessageDialog( view.mainFrame, "インターネットに接続できません。\n【${model.appName}】を終了します。" )
@@ -555,8 +612,10 @@ class PardaloteController {
 
                         Thread.sleep((10 + (Math.random() * 290).toInteger()) * 1000)
                     } catch ( IOException e ) {
-                        if( !( e instanceof UnknownHostException || e instanceof NoRouteToHostException ) )
-                            throw e
+                        if( !( e instanceof UnknownHostException || e instanceof NoRouteToHostException ) ) {
+                            log.info "", e
+                            continue
+                        }
 
                         edt{
                             JOptionPane.showMessageDialog( view.mainFrame, "インターネットに接続できません。\n【${model.appName}】を終了します。" )
@@ -663,8 +722,10 @@ class PardaloteController {
                         Thread.sleep(10 * 1000)
 
                     } catch ( IOException e ) {
-                        if( !( e instanceof UnknownHostException || e instanceof NoRouteToHostException ) )
-                            throw e
+                        if( !( e instanceof UnknownHostException || e instanceof NoRouteToHostException ) ) {
+                            log.info "", e
+                            continue
+                        }
 
                         edt{
                             JOptionPane.showOptionDialog(
@@ -1164,31 +1225,42 @@ class PardaloteController {
         log.info "clearStatusMessage - end."
     }
 
-    def unauth = { evt ->
+    def unauth = { evt = null ->
         log.info "unauth - start."
 
-        JOptionPane.showMessageDialog( view.mainFrame, "認証を解除します。\n別アカウントで【facebook認証】を行う場合は、facebookサイトからログアウトしていることを確認してから実施してください。" )
-        facebookApi.reset()
+        try {
+            def params = model.properties.clone()
+    
+            JOptionPane.showMessageDialog( view.mainFrame, "認証を解除します。\n別アカウントで【facebook認証】を行う場合は、facebookサイトからログアウトしていることを確認してから実施してください。" )
+            doOutside {
+                facebookApi.reset()
 
-        this.gsql.executeUpdate("""
-            UPDATE
-                settings
-            SET
-                access_token = ${facebookApi.accessToken}
-                ,expires_in = ${facebookApi.expiresIn}
-        """)
-
-        model.accessToken = facebookApi.accessToken
-        model.expiresIn = facebookApi.expiresIn
-        model.fullName = ""
-        model.email = ""
-        log.info "unauth - end."
+                this.gsql.executeUpdate("""
+                    UPDATE
+                        settings
+                    SET
+                        access_token = ${facebookApi.accessToken}
+                        ,expires_in = ${facebookApi.expiresIn}
+                        ,limit_time = ${facebookApi.limitTime}
+                """)
+    
+                doLater {
+                    model.accessToken = facebookApi.accessToken
+                    model.fullName = ""
+                    model.email = ""
+                }
+            }
+        } catch ( e ) {
+            log.error "unauth - exception.", e
+        } finally {
+            log.info "unauth - end."
+        }
     }
+    
 
     def auth = { evt ->
         log.info "auth - start."
         model.accessToken = ""
-        model.expiresIn = ""
 
         facebookApiLoad()
         log.info "auth - end."
@@ -1197,12 +1269,14 @@ class PardaloteController {
     def facebookApiLoad() {
         model.accessToken = !facebookApi.accessToken.empty ? facebookApi.accessToken: facebookApi.auth()
 
+
         this.gsql.executeUpdate("""
             UPDATE
                 settings
             SET
                 access_token = ${facebookApi.accessToken}
                 ,expires_in = ${facebookApi.expiresIn}
+                ,limit_time = ${facebookApi.limitTime}
         """)
 
         this.client = new DefaultFacebookClient(facebookApi.accessToken )

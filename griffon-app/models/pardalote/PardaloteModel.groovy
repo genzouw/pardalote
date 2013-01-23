@@ -10,8 +10,6 @@ class PardaloteModel {
 
     @Bindable String accessToken = ""
 
-    @Bindable String expiresIn = ""
-
     @Bindable String fullName = ""
 
     @Bindable String email = ""

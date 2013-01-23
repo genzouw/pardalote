@@ -20,24 +20,42 @@ class FacebookApi {
     def localPort = 9999
     def scopeList = []
 
-    def String accessToken = ""
-    def String expiresIn = ""
+    String accessToken = ""
+    String expiresIn = ""
+    String limitTime = ""
 
 	def BASE_URL = "https://graph.facebook.com"
     def jsonSlurper = new JsonSlurper()
     def xmlSlurper = new XmlSlurper()
 
-    void setAccessToken( String accessToken ) {
+    synchronized void setAccessToken( String accessToken ) {
         this.accessToken = accessToken ?: ""
     }
 
-    void setExpiresIn( String expiresIn ) {
+    synchronized void setExpiresIn( String expiresIn ) {
         this.expiresIn = expiresIn ?: ""
+    }
+
+    synchronized void setLimitTime( String limitTime ) {
+        this.limitTime = limitTime ?: ""
+    }
+
+    synchronized String getAccessToken() {
+        return this.accessToken
+    }
+
+    synchronized String getExpiresIn() {
+        return this.expiresIn
+    }
+
+    synchronized String getLimitTime() {
+        return this.limitTime
     }
 
     void reset() {
         this.accessToken = ""
         this.expiresIn = ""
+        this.limitTime = ""
         Desktop.desktop.browse new URI("https://www.facebook.com/")
     }
 
@@ -47,6 +65,7 @@ class FacebookApi {
         assert localPort
         assert accessToken?.empty
         assert expiresIn?.empty
+        assert limitTime?.empty
         assert scopeList && !scopeList.empty
 
         def urltext = "https://www.facebook.com/dialog/oauth?" + [
@@ -90,6 +109,10 @@ class FacebookApi {
                             synchronized(this){
                                 accessToken = request.getParameter("access_token")
                                 expiresIn = request.getParameter("expires_in")
+                                if (expiresIn) {
+                                    def now = Calendar.instance
+                                    limitTime = ( expiresIn.toInteger() * 1000 + now.timeInMillis ).toString()
+                                }
                             }
                             response.with{
                                 characterEncoding = "UTF-8"
@@ -133,7 +156,7 @@ class FacebookApi {
         this.accessToken
     }
 
-	def get( path, params = [:] ) {
+	synchronized def get( path, params = [:] ) {
 	    jsonSlurper.parseText(
 	        new URL("${BASE_URL}/${path}?" + buildParamText( params )).text
 	    )
@@ -143,7 +166,7 @@ class FacebookApi {
        ([ "access_token":accessToken ] + params).collect{ it.key + "=" + it.value }.join("&")
     }
 
-	def post( path, params = [:] ) {
+	synchronized def post( path, params = [:] ) {
         log.info "post start."
         log.info "path:${path}"
         log.info "params:${params}"
@@ -163,7 +186,7 @@ class FacebookApi {
         log.info "post end."
 	}
 
-	def fql( query ) {
+	synchronized def fql( query ) {
         def params = [ "query":java.net.URLEncoder.encode(query, "UTF-8") ]
 	    xmlSlurper.parseText(
 	        new URL("https://api.facebook.com/method/fql.query?" + buildParamText( params )).text
