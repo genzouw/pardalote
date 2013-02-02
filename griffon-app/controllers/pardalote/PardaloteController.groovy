@@ -901,7 +901,7 @@ class PardaloteController {
         log.info "deleteMessage - start."
         model.with{
             def count = new MessageDao("gsql":this.gsql).delete(
-                statusMessageId,
+                messageId,
             )
 
             this.reflushMessage(evt)
