@@ -1257,14 +1257,28 @@ class PardaloteController {
         }
     }
     
-
-    def auth = { evt ->
+    def auth = { evt = null ->
         log.info "auth - start."
-        model.accessToken = ""
 
-        facebookApiLoad()
-        log.info "auth - end."
+        try {
+            def params = model.properties.clone()
+    
+            model.accessToken = ""
+
+            doOutside {
+                facebookApiLoad()
+    
+                doLater {
+    
+                }
+            }
+        } catch ( e ) {
+            log.error "auth - exception.", e
+        } finally {
+            log.info "auth - end."
+        }
     }
+    
 
     def facebookApiLoad() {
         model.accessToken = !facebookApi.accessToken.empty ? facebookApi.accessToken: facebookApi.auth()
