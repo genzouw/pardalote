@@ -7,8 +7,17 @@ import com.restfb.*
 import com.restfb.types.*
 import groovy.sql.*
 import groovy.util.logging.*
+import groovy.util.logging.Slf4j
+import groovyx.net.http.*
+import java.awt.*
 import javax.swing.*
+import org.hibernate.cfg.*
+import static groovyx.net.http.ContentType.*
+import static groovyx.net.http.Method.*
+import static javax.swing.JOptionPane.ERROR_MESSAGE
+import static javax.swing.JOptionPane.OK_OPTION
 import static javax.swing.JOptionPane.QUESTION_MESSAGE
+import static javax.swing.JOptionPane.WARNING_MESSAGE
 import static javax.swing.JOptionPane.YES_NO_OPTION
 import static javax.swing.JOptionPane.YES_OPTION
 import static javax.swing.JOptionPane.showMessageDialog
@@ -241,6 +250,43 @@ class PardaloteController {
                     }
                     System.exit(1)
                 }
+
+                def success = true
+                
+                new HTTPBuilder( "https://graph.facebook.com/" ).request( GET, JSON ) {
+                    uri.path = "/oauth/access_token"
+                    uri.query = [
+                        "client_id":"${model.appId}",
+                        "redirect_uri":"http://localhost:9999/login_success.html"
+                    ]
+                    headers.'User-Agent' = 'Mozilla/5.0'
+                    requestContentType = URLENC
+
+                    response.success = { resp, reader  ->
+                        return true
+                    }
+
+                    response.failure = { resp, json ->
+                        if (json?.error?.code == 101) {
+                            success = false
+                        }
+                        return false
+                    }
+                }
+
+                if (!success) {
+                    showOptionDialog(
+                        app.windowManager.windows[0],
+                        "認証に失敗しました。\nアプリケーションを終了します。",
+                        "エラー",
+                        OK_OPTION,
+                        ERROR_MESSAGE,
+                        null,
+                        [ "閉じる" ] as String[], "閉じる"
+                    )
+                    System.exit(2)
+                }
+
 
                 this.gsql.executeUpdate("""
                     UPDATE

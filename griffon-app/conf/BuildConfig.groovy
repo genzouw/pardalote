@@ -176,6 +176,7 @@ griffon.project.dependency.resolution = {
         // runtime 'mysql:mysql-connector-java:5.1.5'
         compile "org.mortbay.jetty:jetty-embedded:6.1.26"
         compile "com.restfb:restfb:1.6.9"
+        compile "org.codehaus.groovy.modules.http-builder:http-builder:0.6"
         runtime "org.xerial:sqlite-jdbc:3.7.2"
     }
 }
